@@ -3,12 +3,17 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
-    "dev": "next dev",
+    "dev": "next dev --hostname 127.0.0.1",
     "build": "next build",
-    "start": "next start",
-    "lint": "eslint"
+    "start": "next start --hostname 127.0.0.1",
+    "lint": "eslint",
+    "test": "vitest run"
   },
   "dependencies": {
+    "@aws-sdk/client-ec2": "^3.1092.0",
+    "@azure/arm-compute": "^24.1.0",
+    "@azure/arm-network": "^37.0.0",
+    "@azure/identity": "^4.13.1",
     "next": "16.2.11",
     "react": "19.2.4",
     "react-dom": "19.2.4"
@@ -19,6 +24,7 @@
     "@types/react-dom": "^19",
     "eslint": "^9",
     "eslint-config-next": "16.2.11",
-    "typescript": "^5"
+    "typescript": "^5",
+    "vitest": "^4.1.10"
   }
 }
