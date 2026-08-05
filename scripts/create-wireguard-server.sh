@@ -37,6 +37,7 @@ WG_INTERFACE="${WG_INTERFACE:-wg0}"
 WG_PORT="${WG_PORT:-51820}"                        # matches WIREGUARD_PORT in .env.local
 WG_CLIENT_NAME="${WG_CLIENT_NAME:-client1}"
 WG_USE_PRESHARED_KEY="${WG_USE_PRESHARED_KEY:-true}"
+WG_GENERATE_QR="${WG_GENERATE_QR:-true}"           # prints a scannable QR code of the client config
 WG_ENDPOINT_HOST="${WG_ENDPOINT_HOST:-}"            # empty = auto-detect this box's public IP
 
 # WG_SERVER_ADDRESS and WG_CLIENT_ALLOWED_IPS are NOT derived from each other
@@ -66,6 +67,9 @@ fi
 PACKAGES_NEEDED=()
 command -v wg >/dev/null 2>&1 || PACKAGES_NEEDED+=(wireguard)
 command -v curl >/dev/null 2>&1 || PACKAGES_NEEDED+=(curl)
+if [[ "$WG_GENERATE_QR" == "true" ]]; then
+  command -v qrencode >/dev/null 2>&1 || PACKAGES_NEEDED+=(qrencode)
+fi
 
 if [[ ${#PACKAGES_NEEDED[@]} -gt 0 ]]; then
   echo "Installing: ${PACKAGES_NEEDED[*]}"
@@ -175,6 +179,12 @@ echo "----- BEGIN ${WG_CLIENT_NAME}.conf -----"
 cat "$CLIENT_CONF"
 echo "----- END ${WG_CLIENT_NAME}.conf -----"
 echo
+if [[ "$WG_GENERATE_QR" == "true" ]]; then
+  echo "Scan with the WireGuard mobile app to import ${WG_CLIENT_NAME}.conf directly:"
+  echo
+  qrencode -t ansiutf8 < "$CLIENT_CONF"
+  echo
+fi
 echo "SECURITY — do this now:"
 echo "  1. Copy the client config off this server, e.g.:"
 echo "       scp <user>@<this-host>:${CLIENT_CONF} ./${WG_CLIENT_NAME}.conf"
@@ -183,6 +193,9 @@ echo "  2. Delete it from the server — it contains the client's private key"
 echo "     and is not needed here once copied:"
 echo "       rm -f ${CLIENT_CONF} ${WG_DIR}/${WG_CLIENT_NAME}_private.key"
 echo "  3. Import ${WG_CLIENT_NAME}.conf into your WireGuard client app and connect."
+echo "     (or scan the QR code above, which encodes the same private key)"
+echo "  4. Clear your terminal's scrollback once you're done — both the config"
+echo "     text and QR code above contain the client's private key."
 echo
 echo "This script never touched firewall, NAT, or IP-forwarding settings."
 echo "See scripts/host-firewall-example.sh and docs/wireguard-server-setup.md"

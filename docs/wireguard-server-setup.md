@@ -17,7 +17,7 @@ SSH into the box, then:
 sudo bash scripts/create-wireguard-server.sh
 ```
 
-That's it — this installs WireGuard, generates a server keypair and one client keypair, writes the server and client configs, and enables the systemd service. The client config is printed to your terminal at the end so you can copy it straight off the box.
+That's it — this installs WireGuard, generates a server keypair and one client keypair, writes the server and client configs, and enables the systemd service. The client config is printed to your terminal at the end, along with a QR code, so you can copy it straight off the box or scan it into the WireGuard mobile app.
 
 ## Configuration
 
@@ -37,6 +37,7 @@ sudo -E WG_CLIENT_NAME=phone WG_ENDPOINT_HOST=203.0.113.5 bash scripts/create-wi
 | `WG_CLIENT_ALLOWED_IPS` | `10.8.0.0/24` | What the **client** routes through the tunnel — defaults to just the server's subnet, not `0.0.0.0/0` (this is a point-to-point tunnel, not a full-tunnel gateway) |
 | `WG_ENDPOINT_HOST` | empty → auto-detect | Public IP/hostname clients use to reach this server |
 | `WG_USE_PRESHARED_KEY` | `true` | Adds a WireGuard preshared key to the peer, for extra defense-in-depth |
+| `WG_GENERATE_QR` | `true` | Prints a scannable QR code of the client config (installs `qrencode` if missing) |
 
 `WG_SERVER_ADDRESS` and `WG_CLIENT_ALLOWED_IPS` aren't derived from each other — if you override `WG_SERVER_ADDRESS`, override `WG_CLIENT_ALLOWED_IPS` to match its network too, or the client's route through the tunnel will be wrong.
 
@@ -57,12 +58,13 @@ Does **not**:
 
 The script prints the full client config to your terminal and also writes it to disk. Do this immediately after:
 
-1. Copy the client config off the server (copy the printed block, or `scp` the file).
+1. Copy the client config off the server (copy the printed block, `scp` the file, or scan the printed QR code with the WireGuard mobile app).
 2. Delete it from the server — it contains the client's private key and isn't needed there once copied:
    ```bash
    rm -f /etc/wireguard/<client-name>.conf /etc/wireguard/<client-name>_private.key
    ```
 3. Import the config into your WireGuard client app and connect.
+4. Clear your terminal's scrollback — both the printed config text and the QR code contain the client's private key.
 
 ## Re-running / adding more clients
 
