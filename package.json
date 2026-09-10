@@ -14,7 +14,7 @@
     "@azure/arm-compute": "^24.1.0",
     "@azure/arm-network": "^37.0.0",
     "@azure/identity": "^4.13.1",
-    "next": "16.2.11",
+    "next": "16.3.1",
     "react": "19.2.4",
     "react-dom": "19.2.4"
   },
@@ -23,7 +23,7 @@
     "@types/react": "^19",
     "@types/react-dom": "^19",
     "eslint": "^9",
-    "eslint-config-next": "16.2.11",
+    "eslint-config-next": "16.3.1",
     "typescript": "^5",
     "vitest": "^4.1.10"
   }
