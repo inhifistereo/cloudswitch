@@ -4,7 +4,7 @@ A minimal private dashboard to view status and start/stop two fixed cloud VMs �
 
 This is a personal utility for two specific, pre-existing machines. It does not create VMs, manage multiple accounts, or generalize to other cloud resources.
 
-> ⚠️ **Security warning:** The start/stop API routes have no authentication, authorization, or CSRF protection — they rely entirely on the server being bound to `127.0.0.1` (loopback only). **Do not expose this application to the public internet or an untrusted network without adding your own authentication layer.** `npm run dev` and `npm run start` are already configured to bind to `127.0.0.1` for this reason — do not remove that flag.
+> ⚠️ **Security warning:** The API routes have **no authentication or authorization of their own.** They enforce same-origin only (`src/lib/csrf.ts`), which stops another website from forging requests through your browser — it does **not** stop anyone who can reach the URL directly. **Authentication must come from in front of the app.** Locally that is the `127.0.0.1` bind; hosted, it must be platform access control such as Azure App Service Easy Auth, Cloudflare Access, or Tailscale. Do not remove `--hostname 127.0.0.1` from `dev`/`start` until something else is authenticating requests — see [Hosting](#hosting).
 
 ## What it does
 
@@ -33,7 +33,7 @@ Open http://127.0.0.1:3000.
 
 ## AWS CLI authentication
 
-CloudSwitch uses the AWS SDK's **default credential provider chain** — it never reads or stores access keys itself. Being signed into the AWS Console in a browser is **not** sufficient; the SDK needs credentials available to the Node.js process.
+CloudSwitch uses the AWS SDK's **default credential provider chain**. CloudSwitch has no credential-handling code of its own — `src/cloud/aws.ts` never references `AWS_ACCESS_KEY_ID` — but the chain it delegates to *does* read those variables from `process.env`, which Next.js populates from `.env.local`. So if you put keys in `.env.local`, they are being stored in this project directory, by you, and the SDK will use them. Prefer ambient credentials so that no secret lives here at all. Being signed into the AWS Console in a browser is **not** sufficient; the SDK needs credentials available to the Node.js process.
 
 Preferred: **AWS IAM Identity Center (SSO)**, not long-lived IAM user access keys.
 
@@ -61,6 +61,7 @@ All variables are server-side only — none are prefixed `NEXT_PUBLIC_`, so none
 
 | Variable | Meaning |
 |---|---|
+| `ALLOWED_HOSTS` | Comma-separated hostnames this app is legitimately reached on. Empty = loopback only (`127.0.0.1`, `localhost`, `::1`). **A hosted deployment must set this** to its public hostname; it fails closed, returning 403 to every API request if unset on a public host |
 | `AWS_REGION` | Region of the EC2 instance, e.g. `us-east-1` |
 | `AWS_INSTANCE_ID` | The EC2 instance ID, e.g. `i-0123456789abcdef0` |
 | `AWS_VM_DISPLAY_NAME` | Label shown on the AWS card |
@@ -131,9 +132,22 @@ See [azure-setup.md](./docs/azure-setup.md) for the `az` CLI commands to create 
 
 ## Security and deployment warnings
 
-- **Never expose this app to the public internet without adding your own authentication.** There is no login system by design (out of scope for a personal utility) — the loopback bind (`127.0.0.1`) is the only thing standing between the internet and unauthenticated VM start/stop.
-- Do not remove `--hostname 127.0.0.1` from the `dev`/`start` scripts unless you've added a real auth layer in front.
+- **The app has no login system of its own, by design.** Authentication comes from in front of it — the loopback bind locally, platform access control when hosted. See [Hosting](#hosting).
+- The same-origin guard in `src/lib/csrf.ts` blocks cross-site forgery, not direct access. It is necessary but not sufficient: it does nothing against someone who can `curl` the URL.
 - CloudSwitch never modifies Security Groups, NSGs, OS firewall rules, public IPs, routes, or WireGuard configuration — see the WireGuard/network section below and [aws-setup.md](./docs/aws-setup.md) for how those are configured, manually, by you.
+
+## Hosting
+
+The `dev` and `start` scripts hardcode `--hostname 127.0.0.1`. That flag is doing real security work locally: it is what makes the unauthenticated API unreachable. A hosting platform needs the app to accept its traffic, so deploying means removing it — **and removing it is exactly the moment the app stops being protected by unreachability.**
+
+Before that flag comes out, both of these must be true:
+
+1. **Authentication is enforced in front of the app.** Azure App Service Easy Auth, Cloudflare Access, or Tailscale. Do not write your own login for this.
+2. **`ALLOWED_HOSTS` is set** to the deployment's public hostname, so the same-origin guard knows what host to expect.
+
+Why the guard still matters behind Easy Auth: platform authentication is cookie-based, so once you are signed in, your browser attaches that cookie to *any* request — including one forged by another site you happen to visit. Easy Auth answers "who are you"; the same-origin guard answers "did this request really come from this app". You need both.
+
+On Azure App Service specifically, enable a **managed identity** and leave `AZURE_CLIENT_ID`/`AZURE_CLIENT_SECRET`/`AZURE_TENANT_ID` unset — `DefaultAzureCredential` uses it automatically, and the long-lived client secret stops existing. AWS credentials still have to be static there; put them in application settings or a Key Vault reference, never in a deployed file.
 
 ## WireGuard and network security
 
