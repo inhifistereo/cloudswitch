@@ -4,21 +4,33 @@ A minimal private dashboard to view status and start/stop two fixed cloud VMs �
 
 This is a personal utility for two specific, pre-existing machines. It does not create VMs, manage multiple accounts, or generalize to other cloud resources.
 
-> ⚠️ **Security warning:** The API routes have **no authentication or authorization of their own.** They enforce same-origin only (`src/lib/csrf.ts`), which stops another website from forging requests through your browser — it does **not** stop anyone who can reach the URL directly. **Authentication must come from in front of the app.** Locally that is the `127.0.0.1` bind; hosted, it must be platform access control such as Azure App Service Easy Auth, Cloudflare Access, or Tailscale. Do not remove `--hostname 127.0.0.1` from `dev`/`start` until something else is authenticating requests — see [Hosting](#hosting).
+> ⚠️ **The API routes have no authentication of their own.** They enforce same-origin, which stops another website forging requests through your browser but does nothing against anyone who can reach the URL directly. Authentication has to come from in front of the app: the `127.0.0.1` bind locally, platform access control when hosted. **Do not remove `--hostname 127.0.0.1` from `dev`/`start` until something else is authenticating requests** — see [Security model](#security-model) and [Hosting](#hosting).
 
 ## What it does
 
 - Shows current power state, public address, WireGuard port, and a read-only network-security posture check for each VM.
 - Starts or stops the AWS EC2 instance via the AWS SDK v3 (`@aws-sdk/client-ec2`).
 - Starts or stops the Azure VM via the Azure SDK (`@azure/identity`, `@azure/arm-compute`, `@azure/arm-network`), disabled by default until you set `AZURE_ENABLED=true`.
+- Enforces same-origin on every API route (`src/lib/csrf.ts`), so another website cannot forge a start/stop through your browser.
 - **Never** modifies Security Groups, NSGs, OS firewall rules, public IP assignment, routes, or WireGuard configuration. Those are separate, manual, human-reviewed actions — see [aws-setup.md](./docs/aws-setup.md) and `scripts/host-firewall-example.sh`.
+
+Two setup helpers ship alongside it, neither of which CloudSwitch ever runs itself:
+
+| Script | Purpose |
+|---|---|
+| `scripts/create-wireguard-server.sh` | Turns a fresh Ubuntu/Debian box into a WireGuard server with one client, printing the client config and a QR code. See [wireguard-server-setup.md](./docs/wireguard-server-setup.md) |
+| `scripts/host-firewall-example.sh` | Reference-only `ufw` configuration for the VM's OS firewall. Read it fully — it can lock you out of SSH |
+
+There is also `terraform/main.tf`, which provisions the VPC, subnet, Security Group, Elastic IP, and EC2 instance if you would rather not click through the console.
 
 ## Prerequisites
 
-- Node.js 18.18+ and npm
+- **Node.js 20.9+** and npm — Next.js 16 dropped support for Node.js 18
 - [AWS CLI v2](https://docs.aws.amazon.com/cli/latest/userguide/getting-started-install.html), authenticated (see below)
-- An already-provisioned EC2 instance running WireGuard — see [aws-setup.md](./docs/aws-setup.md) if you haven't created one yet
+- An already-provisioned EC2 instance — see [aws-setup.md](./docs/aws-setup.md) to create one
+- WireGuard running on that instance — see [wireguard-server-setup.md](./docs/wireguard-server-setup.md), which drives `scripts/create-wireguard-server.sh`
 - An IAM identity with the permissions listed under [Minimum IAM permissions](#minimum-iam-permissions)
+- Only if you enable Azure: the [Azure CLI](https://learn.microsoft.com/cli/azure/install-azure-cli) or service principal credentials — see [azure-setup.md](./docs/azure-setup.md)
 
 ## Installation
 
@@ -33,7 +45,9 @@ Open http://127.0.0.1:3000.
 
 ## AWS CLI authentication
 
-CloudSwitch uses the AWS SDK's **default credential provider chain**. CloudSwitch has no credential-handling code of its own — `src/cloud/aws.ts` never references `AWS_ACCESS_KEY_ID` — but the chain it delegates to *does* read those variables from `process.env`, which Next.js populates from `.env.local`. So if you put keys in `.env.local`, they are being stored in this project directory, by you, and the SDK will use them. Prefer ambient credentials so that no secret lives here at all. Being signed into the AWS Console in a browser is **not** sufficient; the SDK needs credentials available to the Node.js process.
+CloudSwitch uses the AWS SDK's **default credential provider chain** and has no credential-handling code of its own — `src/cloud/aws.ts` never references `AWS_ACCESS_KEY_ID`. Note what that does *not* mean: the chain it delegates to reads those variables from `process.env`, and Next.js populates `process.env` from `.env.local`. Keys placed there are stored in this project directory and will be used. Prefer ambient credentials, so no secret lives here at all.
+
+Being signed into the AWS Console in a browser is **not** sufficient; the SDK needs credentials available to the Node.js process.
 
 Preferred: **AWS IAM Identity Center (SSO)**, not long-lived IAM user access keys.
 
@@ -130,11 +144,20 @@ Scoped to exactly the VM's resource group — never subscription-wide:
 
 See [azure-setup.md](./docs/azure-setup.md) for the `az` CLI commands to create these.
 
-## Security and deployment warnings
+## Security model
 
-- **The app has no login system of its own, by design.** Authentication comes from in front of it — the loopback bind locally, platform access control when hosted. See [Hosting](#hosting).
-- The same-origin guard in `src/lib/csrf.ts` blocks cross-site forgery, not direct access. It is necessary but not sufficient: it does nothing against someone who can `curl` the URL.
-- CloudSwitch never modifies Security Groups, NSGs, OS firewall rules, public IPs, routes, or WireGuard configuration — see the WireGuard/network section below and [aws-setup.md](./docs/aws-setup.md) for how those are configured, manually, by you.
+Two layers, and they answer different questions:
+
+| Layer | What it stops | What it does **not** stop |
+|---|---|---|
+| Reachability — the `127.0.0.1` bind locally, platform auth when hosted | Anyone who cannot reach the URL | Nothing, once the URL is reachable |
+| Same-origin guard (`src/lib/csrf.ts`) | Another site forging requests through your logged-in browser | Anyone hitting the API directly with `curl` |
+
+Neither is sufficient alone. The guard is not authentication, and reachability is not CSRF protection — the browser is already on loopback, so a local bind never protected against a malicious page. CloudSwitch has no login system of its own, by design; see [Hosting](#hosting).
+
+The guard validates the `Host` header against `ALLOWED_HOSTS` before trusting `Sec-Fetch-Site`, falling back to an `Origin` comparison. It rejects with 403: cross-site requests, requests carrying neither header (plain `curl`), and DNS-rebound requests arriving on loopback with a foreign `Host`.
+
+CloudSwitch also never modifies Security Groups, NSGs, OS firewall rules, public IPs, routes, or WireGuard configuration — see [WireGuard and network security](#wireguard-and-network-security) and [aws-setup.md](./docs/aws-setup.md) for how those are configured, manually, by you.
 
 ## Hosting
 
@@ -199,3 +222,7 @@ The read-only posture check reports one of: **Expected exposure**, **Restricted 
 | Azure card shows "credentials not found or expired" | Run `az login` again, or check `AZURE_CLIENT_ID`/`AZURE_CLIENT_SECRET`/`AZURE_TENANT_ID` in `.env.local` |
 | Azure card shows "VM was not found" | `AZURE_RESOURCE_GROUP` or `AZURE_VM_NAME` doesn't match an existing VM — re-check with `az vm list` |
 | Azure card shows "lack permission for this action" | The role assignments from [azure-setup.md](./docs/azure-setup.md) aren't attached to the service principal your credentials resolve to |
+| Every API call returns 403 "Request host is not allowed" | You are reaching the app on a hostname that isn't loopback and isn't in `ALLOWED_HOSTS`. Set `ALLOWED_HOSTS` to the hostname you actually browse to. This is the guard failing closed, as intended |
+| API returns 403 "Cross-origin request rejected" | The request did not come from the app's own page. Expected for `curl` and for another site's JavaScript; if the dashboard itself hits this, check that you are not reaching it through a proxy that rewrites `Origin` or `Host` |
+| API returns 403 "Request is missing origin information" | The client sent neither `Sec-Fetch-Site` nor `Origin` — normal for `curl`. Add `-H "Sec-Fetch-Site: same-origin"` when testing by hand |
+| `npm run dev` fails on an unsupported Node version | Next.js 16 requires Node.js 20.9+; check with `node --version` |
