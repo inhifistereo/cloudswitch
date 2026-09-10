@@ -26,11 +26,11 @@ There is also `terraform/main.tf`, which provisions the VPC, subnet, Security Gr
 ## Prerequisites
 
 - **Node.js 20.9+** and npm — Next.js 16 dropped support for Node.js 18
-- [AWS CLI v2](https://docs.aws.amazon.com/cli/latest/userguide/getting-started-install.html), authenticated (see below)
+- Credentials the AWS SDK's default chain can resolve — an SSO session, a profile, environment variables, or an instance role. [AWS CLI v2](https://docs.aws.amazon.com/cli/latest/userguide/getting-started-install.html) is needed only for `aws sso login` and the setup commands in these docs, not by CloudSwitch itself (see [AWS CLI authentication](#aws-cli-authentication))
 - An already-provisioned EC2 instance — see [aws-setup.md](./docs/aws-setup.md) to create one
 - WireGuard running on that instance — see [wireguard-server-setup.md](./docs/wireguard-server-setup.md), which drives `scripts/create-wireguard-server.sh`
 - An IAM identity with the permissions listed under [Minimum IAM permissions](#minimum-iam-permissions)
-- Only if you enable Azure: the [Azure CLI](https://learn.microsoft.com/cli/azure/install-azure-cli) or service principal credentials — see [azure-setup.md](./docs/azure-setup.md)
+- Only if you enable Azure: credentials that `DefaultAzureCredential` can resolve — a signed-in `az login` session locally, a service principal, or a managed identity when hosted. See [azure-setup.md](./docs/azure-setup.md), whose one-time setup steps use the [Azure CLI](https://learn.microsoft.com/cli/azure/install-azure-cli), though the Azure portal does the same job
 
 ## Installation
 
